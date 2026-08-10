@@ -2,16 +2,15 @@
   "name": "site-creator-vinext-starter",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": ">=22.13.0"
-  },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/migrate.mjs && next build",
+    "build": "next build",
     "start": "next start",
     "test": "pnpm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.0",
@@ -28,7 +27,7 @@
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react-dom": "19.2.14",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
