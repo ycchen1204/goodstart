@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/migrate.mjs && next build",
     "start": "next start",
     "test": "pnpm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "2.57.0",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
+    "pg": "8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
