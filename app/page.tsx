@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   activateCohort,
   createActivationCode,
@@ -46,7 +46,8 @@ const demoFoodPosts = [
 
 export default function Home() {
   const [screen, setScreen] = useState<"member" | "manager">("member");
-  const [lineSignedIn] = useState(false);
+  const [lineSignedIn, setLineSignedIn] = useState(false);
+  const [signedInName, setSignedInName] = useState<string | null>(null);
   const [selectedCohort, setSelectedCohort] = useState("cohort-115");
   const [activationCode, setActivationCode] = useState("");
   const [message, setMessage] = useState("");
@@ -76,6 +77,18 @@ export default function Home() {
   const [bodyMeasurementMessage, setBodyMeasurementMessage] = useState("");
   const [weeklySummaryMessage, setWeeklySummaryMessage] = useState("");
   const [lifestyleMessage, setLifestyleMessage] = useState("");
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((response) => response.ok ? response.json() : { authenticated: false })
+      .then((session) => {
+        if (session.authenticated) {
+          setLineSignedIn(true);
+          setSignedInName(session.user.display_name);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   function joinCohort(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -222,7 +235,7 @@ export default function Home() {
               <>
                 <p className="step-label">1／2 身分驗證</p>
                 <h2>使用 LINE 登入</h2>
-                <p>正式版將導向 LINE 登入。啟用碼只在第一次綁定帳號時使用；日後換手機或被登出，以同一個 LINE 帳號重新登入即可。</p>
+                <p>啟用碼只在第一次綁定班級時使用；日後換手機或被登出，以同一個 LINE 帳號重新登入即可。</p>
                 <button className="line-button" type="button" onClick={() => { window.location.href = "/api/auth/line"; }}>
                   <span>LINE</span> 以 LINE 登入
                 </button>
@@ -281,7 +294,7 @@ export default function Home() {
               </div>
             ) : (
               <form onSubmit={joinCohort}>
-                <p className="step-label">2／2 加入班級</p>
+                <p className="step-label">2／2 加入班級{signedInName ? `・${signedInName}` : ""}</p>
                 <h2>首次輸入啟用碼</h2>
                 <label htmlFor="cohort">選擇班級</label>
                 <select id="cohort" value={selectedCohort} onChange={(event) => setSelectedCohort(event.target.value)}>
