@@ -22,6 +22,9 @@ type Activation = {
 
 type Cohort = { id: string; name: string; period: string; members: number };
 type MealRecord = { id: string; mealType: string; source: string; status: string; proteinRange: { min: number; max: number } };
+type FoodWallPost = { id: string; mealType: string; proteinRange: { min: number; max: number } };
+type LeaderboardMember = { rank: number; member: string; points: number };
+type TrendPoint = { point: string; value: number };
 
 const initialCohorts: Cohort[] = [
   { id: "cohort-115", name: "115 年員工體重管理班", period: "2026/09–2026/10", members: 18 },
@@ -60,8 +63,8 @@ export default function Home() {
   const baselineWeightKg = 50;
   const proteinTarget = calculateProteinTarget(baselineWeightKg);
   const dailyProtein = summarizeDailyProtein(mealRecords);
-  const foodWallPosts = visibleFoodWallPosts(demoFoodPosts, "cohort-115");
-  const leaderboard = buildLeaderboard([
+  const foodWallPosts: FoodWallPost[] = visibleFoodWallPosts(demoFoodPosts, "cohort-115");
+  const leaderboard: LeaderboardMember[] = buildLeaderboard([
     { member: "林小雨", optedIn: true, completeDays: 5 },
     { member: "陳大明", optedIn: true, completeDays: 4 },
     { member: "王小安", optedIn: true, completeDays: 4 },
@@ -79,7 +82,7 @@ export default function Home() {
     const result = activateCohort({ activationCode, cohortId: selectedCohort, activations });
 
     if (!result.ok) {
-      setMessage(result.reason);
+      setMessage(result.reason ?? "無法完成啟用，請確認輸入資料後再試一次。");
       return;
     }
 
@@ -111,7 +114,7 @@ export default function Home() {
     event.preventDefault();
     const result = evaluateConsent({ aiConsent, researchConsent });
     if (result.platformAccess === "blocked") {
-      setMessage(result.reason);
+      setMessage(result.reason ?? "目前無法完成同意確認，請稍後再試一次。");
       return;
     }
     setMessage("");
@@ -162,7 +165,7 @@ export default function Home() {
       bodyFatKg: Number(fields.get("bodyFatKg")), bodyFatPercent: Number(fields.get("bodyFatPercent")),
       overrideReason: String(fields.get("overrideReason") || ""),
     });
-    setBodyMeasurementMessage(result.valid ? "已儲存示範量測；正式版將保留輸入者、時間與修改原因。" : result.warnings[0]);
+    setBodyMeasurementMessage(result.valid ? "已儲存示範量測；正式版將保留輸入者、時間與修改原因。" : (result.warnings[0] ?? "請確認量測資料是否完整。"));
   }
 
   function saveWeeklySummary(event: FormEvent<HTMLFormElement>) {
@@ -173,14 +176,14 @@ export default function Home() {
       priority: String(fields.get("priority") || ""),
       nextAction: String(fields.get("nextAction") || ""),
     });
-    setWeeklySummaryMessage(result.valid ? "已儲存示範週摘要；正式版將只提供給該學員。" : result.reason);
+    setWeeklySummaryMessage(result.valid ? "已儲存示範週摘要；正式版將只提供給該學員。" : (result.reason ?? "請完整填寫週摘要。"));
   }
 
   function saveLifestyleReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
     const result = validateWeeklyLifestyleReview({ sleepQuality: Number(fields.get("sleepQuality")), exerciseDays: Number(fields.get("exerciseDays")), exerciseMinutes: Number(fields.get("exerciseMinutes")) });
-    setLifestyleMessage(result.valid ? "已儲存本週回顧。" : result.reason);
+    setLifestyleMessage(result.valid ? "已儲存本週回顧。" : (result.reason ?? "請確認本週回顧資料。"));
   }
 
   return (
@@ -274,7 +277,7 @@ export default function Home() {
                   </div>
                   <div className="leaderboard"><div><p className="step-label">本週完整記錄日</p><h3>自願排行榜</h3></div><ol>{leaderboard.map((member) => <li key={member.member}><span>{member.rank}. {member.member}</span><strong>{member.points} 天</strong></li>)}</ol><p>每個完整記錄日 1 點，每週最多 7 點；同分並列。不以體重或體脂肪排名。</p></div>
                 </section>
-                <section className="private-section"><p className="step-label">僅自己與管理者可見</p><h3>身體組成趨勢</h3><div className="trend-row">{buildMetricTrend([{ point: "課前", weightKg: 80 }, { point: "第 4 週", weightKg: 78 }, { point: "第 8 週", weightKg: 76.5 }], "weightKg").map((item) => <div key={item.point}><strong>{item.value} kg</strong><span>{item.point}</span></div>)}</div><form onSubmit={saveLifestyleReview}><h3>本週睡眠與運動回顧</h3><div className="lifestyle-grid"><label>睡眠品質（1–5）<input name="sleepQuality" type="number" min="1" max="5" defaultValue="4" required /></label><label>運動天數<input name="exerciseDays" type="number" min="0" max="7" defaultValue="3" required /></label><label>運動分鐘數<input name="exerciseMinutes" type="number" min="0" defaultValue="120" required /></label></div>{lifestyleMessage ? <p className="form-message" role="status">{lifestyleMessage}</p> : null}<button className="secondary-button" type="submit">儲存本週回顧</button></form></section>
+                <section className="private-section"><p className="step-label">僅自己與管理者可見</p><h3>身體組成趨勢</h3><div className="trend-row">{(buildMetricTrend([{ point: "課前", weightKg: 80 }, { point: "第 4 週", weightKg: 78 }, { point: "第 8 週", weightKg: 76.5 }], "weightKg") as TrendPoint[]).map((item) => <div key={item.point}><strong>{item.value} kg</strong><span>{item.point}</span></div>)}</div><form onSubmit={saveLifestyleReview}><h3>本週睡眠與運動回顧</h3><div className="lifestyle-grid"><label>睡眠品質（1–5）<input name="sleepQuality" type="number" min="1" max="5" defaultValue="4" required /></label><label>運動天數<input name="exerciseDays" type="number" min="0" max="7" defaultValue="3" required /></label><label>運動分鐘數<input name="exerciseMinutes" type="number" min="0" defaultValue="120" required /></label></div>{lifestyleMessage ? <p className="form-message" role="status">{lifestyleMessage}</p> : null}<button className="secondary-button" type="submit">儲存本週回顧</button></form></section>
               </div>
             ) : (
               <form onSubmit={joinCohort}>
