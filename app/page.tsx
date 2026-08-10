@@ -46,7 +46,7 @@ const demoFoodPosts = [
 
 export default function Home() {
   const [screen, setScreen] = useState<"member" | "manager">("member");
-  const [lineSignedIn, setLineSignedIn] = useState(false);
+  const [lineSignedIn] = useState(false);
   const [selectedCohort, setSelectedCohort] = useState("cohort-115");
   const [activationCode, setActivationCode] = useState("");
   const [message, setMessage] = useState("");
@@ -223,8 +223,8 @@ export default function Home() {
                 <p className="step-label">1／2 身分驗證</p>
                 <h2>使用 LINE 登入</h2>
                 <p>正式版將導向 LINE 登入。啟用碼只在第一次綁定帳號時使用；日後換手機或被登出，以同一個 LINE 帳號重新登入即可。</p>
-                <button className="line-button" type="button" onClick={() => setLineSignedIn(true)}>
-                  <span>LINE</span> 以 LINE 示範登入
+                <button className="line-button" type="button" onClick={() => { window.location.href = "/api/auth/line"; }}>
+                  <span>LINE</span> 以 LINE 登入
                 </button>
               </>
             ) : joinedCohort && !consentComplete ? (
