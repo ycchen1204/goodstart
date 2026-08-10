@@ -1,10 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import {
-  activateCohort,
-  createActivationCode,
-} from "../lib/cohort-activation.mjs";
 import { evaluateConsent } from "../lib/consent.mjs";
 import { confirmMealRecord, isCompleteRecordDay } from "../lib/meal-record.mjs";
 import { calculateProteinTarget, summarizeDailyProtein } from "../lib/protein-target.mjs";
@@ -13,29 +9,11 @@ import { validateBodyMeasurement } from "../lib/body-composition.mjs";
 import { createWeeklySummary } from "../lib/weekly-support.mjs";
 import { buildMetricTrend, validateWeeklyLifestyleReview } from "../lib/pilot-outcomes.mjs";
 
-type Activation = {
-  code: string;
-  cohortId: string;
-  usedAt: string | null;
-  memberName?: string;
-};
-
-type Cohort = { id: string; name: string; period: string; members: number };
+type Cohort = { id: string; name: string; starts_at: string | null; ends_at: string | null; status: string };
 type MealRecord = { id: string; mealType: string; source: string; status: string; proteinRange: { min: number; max: number } };
 type FoodWallPost = { id: string; mealType: string; proteinRange: { min: number; max: number } };
 type LeaderboardMember = { rank: number; member: string; points: number };
 type TrendPoint = { point: string; value: number };
-
-const initialCohorts: Cohort[] = [
-  { id: "cohort-115", name: "115 年員工體重管理班", period: "2026/09–2026/10", members: 18 },
-  { id: "cohort-116", name: "116 年員工體重管理班", period: "尚未開課", members: 0 },
-];
-
-const initialActivations: Activation[] = [
-  { code: "WM-115A01", cohortId: "cohort-115", usedAt: null },
-  { code: "WM-115A02", cohortId: "cohort-115", usedAt: "2026-08-10T08:00:00.000Z", memberName: "王小安" },
-  { code: "WM-116B01", cohortId: "cohort-116", usedAt: null },
-];
 
 const demoFoodPosts = [
   { id: "food-1", cohortId: "cohort-115", visibility: "cohort", mealType: "午餐", proteinRange: { min: 18, max: 25 } },
@@ -48,7 +26,8 @@ export default function Home() {
   const [screen, setScreen] = useState<"member" | "manager">("member");
   const [lineSignedIn, setLineSignedIn] = useState(false);
   const [signedInName, setSignedInName] = useState<string | null>(null);
-  const [selectedCohort, setSelectedCohort] = useState("cohort-115");
+  const [isManager, setIsManager] = useState(false);
+  const [selectedCohort, setSelectedCohort] = useState("");
   const [activationCode, setActivationCode] = useState("");
   const [message, setMessage] = useState("");
   const [joinedCohort, setJoinedCohort] = useState<string | null>(null);
@@ -70,10 +49,12 @@ export default function Home() {
     { member: "陳大明", optedIn: true, completeDays: 4 },
     { member: "王小安", optedIn: true, completeDays: 4 },
   ]);
-  const [activations, setActivations] = useState<Activation[]>(initialActivations);
-  const [cohorts, setCohorts] = useState<Cohort[]>(initialCohorts);
-  const [newCohortName, setNewCohortName] = useState("116 年員工體重管理班");
-  const [newCodeCohort, setNewCodeCohort] = useState("cohort-115");
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [newCohortName, setNewCohortName] = useState("");
+  const [newCodeCohort, setNewCodeCohort] = useState("");
+  const [codeCount, setCodeCount] = useState(1);
+  const [newCodes, setNewCodes] = useState<string[]>([]);
+  const [managerMessage, setManagerMessage] = useState("");
   const [bodyMeasurementMessage, setBodyMeasurementMessage] = useState("");
   const [weeklySummaryMessage, setWeeklySummaryMessage] = useState("");
   const [lifestyleMessage, setLifestyleMessage] = useState("");
@@ -81,46 +62,72 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/auth/session")
       .then((response) => response.ok ? response.json() : { authenticated: false })
-      .then((session) => {
+      .then(async (session) => {
         if (session.authenticated) {
           setLineSignedIn(true);
           setSignedInName(session.user.display_name);
+          setIsManager(session.user.role === "manager");
+          const existingMembership = session.memberships?.[0];
+          if (existingMembership?.cohort_id) {
+            setJoinedCohort(existingMembership.cohort_id);
+            setConsentComplete(true);
+          }
+          const cohortResponse = await fetch("/api/cohorts");
+          const cohortPayload = await cohortResponse.json();
+          if (cohortResponse.ok) {
+            const availableCohorts = cohortPayload.cohorts as Cohort[];
+            setCohorts(availableCohorts);
+            setSelectedCohort((current) => current || availableCohorts[0]?.id || "");
+            setNewCodeCohort((current) => current || availableCohorts[0]?.id || "");
+          }
         }
       })
       .catch(() => undefined);
   }, []);
 
-  function joinCohort(event: FormEvent<HTMLFormElement>) {
+  async function joinCohort(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = activateCohort({ activationCode, cohortId: selectedCohort, activations });
-
-    if (!result.ok) {
-      setMessage(result.reason ?? "無法完成啟用，請確認輸入資料後再試一次。");
+    setMessage("正在驗證啟用碼…");
+    const response = await fetch("/api/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cohortId: selectedCohort, activationCode }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(result.error ?? "無法完成啟用，請確認輸入資料後再試一次。");
       return;
     }
-
-    setActivations((current) =>
-      current.map((item) =>
-        item.code === result.activation.code
-          ? { ...result.activation, memberName: "示範學員" }
-          : item,
-      ),
-    );
-    setJoinedCohort(result.activation.cohortId);
+    setJoinedCohort(selectedCohort);
+    setActivationCode("");
     setMessage("");
   }
 
-  function addCohort(event: FormEvent<HTMLFormElement>) {
+  async function addCohort(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = newCohortName.trim();
-    if (!name) return;
-    const id = `cohort-${Date.now()}`;
-    setCohorts((current) => [
-      ...current,
-      { id, name, period: "尚未開課", members: 0 },
-    ]);
-    setNewCodeCohort(id);
+    setManagerMessage("正在建立班級…");
+    const response = await fetch("/api/admin/cohorts", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: newCohortName }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setManagerMessage(result.error ?? "無法建立班級。");
+    setCohorts((current) => [...current, result.cohort]);
+    setNewCodeCohort(result.cohort.id);
     setNewCohortName("");
+    setManagerMessage(`已建立「${result.cohort.name}」。`);
+  }
+
+  async function addActivationCodes() {
+    setManagerMessage("正在建立啟用碼…");
+    const response = await fetch("/api/admin/activation-codes", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cohortId: newCodeCohort, count: codeCount }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setManagerMessage(result.error ?? "無法建立啟用碼。");
+    setNewCodes(result.codes);
+    setManagerMessage("啟用碼已建立；請立刻以安全方式交給對應學員。離開此頁後將不再顯示明碼。");
   }
 
   function confirmConsent(event: FormEvent<HTMLFormElement>) {
@@ -134,13 +141,6 @@ export default function Home() {
     setConsentComplete(true);
   }
 
-  function addActivationCode() {
-    const code = createActivationCode(activations.map((item) => item.code));
-    setActivations((current) => [
-      ...current,
-      { code, cohortId: newCodeCohort, usedAt: null },
-    ]);
-  }
 
   function createAiDraft() {
     setMealDraft({
@@ -207,13 +207,9 @@ export default function Home() {
           <span>GoodStart</span>
           <small>本機示範版</small>
         </div>
-        <button
-          className="text-button"
-          onClick={() => setScreen(screen === "member" ? "manager" : "member")}
-          type="button"
-        >
-          {screen === "member" ? "切換管理者示範" : "切換學員示範"}
-        </button>
+        {isManager ? <button className="text-button" onClick={() => setScreen(screen === "member" ? "manager" : "member")} type="button">
+          {screen === "member" ? "管理者區" : "回到學員區"}
+        </button> : null}
       </header>
 
       {screen === "member" ? (
@@ -298,7 +294,7 @@ export default function Home() {
                 <h2>首次輸入啟用碼</h2>
                 <label htmlFor="cohort">選擇班級</label>
                 <select id="cohort" value={selectedCohort} onChange={(event) => setSelectedCohort(event.target.value)}>
-                  {cohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>)}
+                  {cohorts.length ? cohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>) : <option value="">目前沒有可加入的班級</option>}
                 </select>
                 <label htmlFor="activation-code">啟用碼</label>
                 <input
@@ -310,8 +306,8 @@ export default function Home() {
                   required
                 />
                 {message ? <p className="form-message" role="alert">{message}</p> : null}
-                <button className="primary-button" type="submit">啟用並加入班級</button>
-                <p className="hint">啟用碼僅供首次綁定班級，可用示範碼：WM-115A01</p>
+                <button className="primary-button" type="submit" disabled={!selectedCohort}>啟用並加入班級</button>
+                <p className="hint">啟用碼僅供第一次綁定班級使用。請向課程管理者取得您的個人啟用碼。</p>
               </form>
             )}
           </div>
@@ -319,15 +315,15 @@ export default function Home() {
       ) : (
         <section className="manager-view" aria-label="管理者班級設定">
           <div className="manager-heading">
-            <p className="eyebrow">管理者示範</p>
+            <p className="eyebrow">管理者區</p>
             <h1>班級與啟用碼管理</h1>
-            <p>正式版將限定管理者在所屬班級內查看與編輯資料；此處只展示流程。</p>
+            <p>建立的啟用碼只會顯示一次；請以私密方式交給對應學員。</p>
           </div>
           <div className="manager-grid">
             <form className="card compact-card" onSubmit={addCohort}>
               <p className="step-label">建立班級</p>
               <label htmlFor="cohort-name">班級名稱</label>
-              <input id="cohort-name" value={newCohortName} onChange={(event) => setNewCohortName(event.target.value)} placeholder="例如：116 年員工體重管理班" />
+              <input id="cohort-name" value={newCohortName} onChange={(event) => setNewCohortName(event.target.value)} placeholder="例如：115 年員工體重管理班" required />
               <button className="primary-button" type="submit">建立班級</button>
             </form>
             <section className="card compact-card">
@@ -336,20 +332,15 @@ export default function Home() {
               <select id="code-cohort" value={newCodeCohort} onChange={(event) => setNewCodeCohort(event.target.value)}>
                 {cohorts.map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>)}
               </select>
-              <button className="primary-button" type="button" onClick={addActivationCode}>建立啟用碼</button>
+              <label htmlFor="code-count">數量</label>
+              <input id="code-count" type="number" min="1" max="50" value={codeCount} onChange={(event) => setCodeCount(Number(event.target.value))} />
+              <button className="primary-button" type="button" disabled={!newCodeCohort} onClick={addActivationCodes}>建立啟用碼</button>
             </section>
           </div>
           <section className="card table-card">
-            <div className="table-heading"><h2>目前班級與啟用碼</h2><span>示範資料</span></div>
-            <div className="code-list">
-              {activations.map((item) => {
-                const cohort = cohorts.find((value) => value.id === item.cohortId);
-                return <div className="code-row" key={item.code}>
-                  <div><strong>{item.code}</strong><span>{cohort?.name ?? "已建立班級"}</span></div>
-                  <span className={item.usedAt ? "status used" : "status available"}>{item.usedAt ? "已使用" : "可使用"}</span>
-                </div>;
-              })}
-            </div>
+            <div className="table-heading"><h2>剛建立的啟用碼</h2><span>僅顯示一次</span></div>
+            {managerMessage ? <p className="form-message" role="status">{managerMessage}</p> : null}
+            {newCodes.length ? <div className="code-list">{newCodes.map((code) => <div className="code-row" key={code}><strong>{code}</strong><span className="status available">可使用</span></div>)}</div> : <p>尚未建立新的啟用碼。</p>}
           </section>
           <form className="card measurement-card" onSubmit={saveBodyMeasurement}>
             <div className="table-heading"><div><p className="step-label">私密身體組成量測</p><h2>手動輸入 ACCUNIQ BC380</h2></div><span>僅本人與管理者可見</span></div>
